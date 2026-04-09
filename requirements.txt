@@ -1,0 +1,12 @@
+pymongo[srv]
+scikit-learn
+pandas
+numpy
+flask
+flask-cors
+streamlit
+plotly
+python-dotenv
+requests
+dnspython
+gunicorn
