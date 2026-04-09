@@ -75,8 +75,23 @@ def load_model():
     return bundle["model"], bundle["encoder"], bundle["classes"]
 
 
+# Load model — catch errors so gunicorn doesn't crash silently
+_model, _encoder, _classes = None, None, None
+try:
+    _model, _encoder, _classes = load_model()
+except Exception as e:
+    print(f"[ERROR] Failed to load model: {e}")
 
-_model, _encoder, _classes = load_model()
+# ─── Root route — shows API status ──────────────────────────────────────────
+@app.route("/", methods=["GET"])
+def index():
+    status = "ok" if _model is not None else "model_not_loaded"
+    return jsonify({
+        "app": "Crop Recommendation AI",
+        "status": status,
+        "endpoints": ["/health", "/recommend", "/history", "/predict"],
+        "model_loaded": _model is not None,
+    })
 
 # ─── MongoDB connection (lazy, with retry) ───────────────────────────────────
 _mongo_client = None
@@ -128,9 +143,10 @@ def make_prediction(temperature: float, humidity: float, soil_moisture: float) -
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
-        "status": "ok",
+        "status": "ok" if _model is not None else "model_not_loaded",
         "model": "RandomForest",
-        "crops_supported": len(_classes),
+        "model_loaded": _model is not None,
+        "crops_supported": len(_classes) if _classes else 0,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
@@ -138,6 +154,8 @@ def health():
 @app.route("/recommend", methods=["GET"])
 def recommend():
     """Read latest MongoDB sensor doc and return crop recommendation."""
+    if _model is None:
+        return jsonify({"error": "Model not loaded yet. Check /health for status."}), 503
     try:
         col    = get_collection()
         latest = col.find_one(sort=[("timestamp", -1)])
